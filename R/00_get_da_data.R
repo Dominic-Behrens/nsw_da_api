@@ -83,8 +83,10 @@ return(data)
 #clean data
 clean_data<-clean_output(details)
 
-#convert this to a tibble
-
+#convert this to a df
 das_df<-map_dfr(clean_data,as_tibble)%>%
   unnest_wider(Location)%>%
   unnest_wider(SubdivisionType)
+
+#save output
+write.csv(das_df,'./Data/da_example.csv')
