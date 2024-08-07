@@ -13,7 +13,8 @@ pacman::p_load(
   RCurl,
   jsonlite,
   rvest,
-  broom
+  broom,
+  purrr
 )
 
 #basic setup
@@ -30,7 +31,7 @@ options(scipen = 999)
 
 #define headers
 headers<-c(
-  'PageSize'='1000000',
+  'PageSize'='100',
   'PageNumber'='1',
   'filters'='{ "filters": {"CostOfDevelopmentFrom":200000,
   "ApplicationType":"Development Application"} }'
@@ -47,3 +48,43 @@ details<-content$Application
 
 
 #tidy up downloaded data----
+#first, remove 'lot' list from each element (problematic)
+
+for (i in seq_along(details)){
+  details[[i]]$Location<-lapply(details[[i]]$Location, function(loc) {
+    loc$Lot <-NULL
+    return(loc)
+  })
+}
+#unnest nested lists and dataframe from the applications data
+
+clean_output<-function(data){
+  for(i in seq_along(data)){
+    #drop various unnecessary datapoints
+    data[[i]]$VPAStatus<-NULL
+    #ensure council is formatted properly
+    if(is.list(data[[i]]$Council)){
+      data[[i]]$Council<-data[[i]]$Council$CouncilName
+    }
+    #keep only the first location (this might need to be changed for big subdivisions
+    if(length(data[[i]]$Location)>1){
+      data[[i]]$Location<-list(data[[i]]$Location[[1]])
+    }  
+    #concatenate DevelopmentType
+    if(is.list(data[[i]]$DevelopmentType)){
+      concatenated_types<-paste(sapply(data[[i]]$DevelopmentType,function(dt) dt$DevelopmentType),
+                                collapse="-")
+      data[[i]]$DevelopmentType<-concatenated_types
+    }
+  }
+return(data)
+}
+
+#clean data
+clean_data<-clean_output(details)
+
+#convert this to a tibble
+
+das_df<-map_dfr(clean_data,as_tibble)%>%
+  unnest_wider(Location)%>%
+  unnest_wider(SubdivisionType)
