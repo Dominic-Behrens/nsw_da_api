@@ -1,5 +1,5 @@
 #Author: Dominic Behrens
-#Purpose: Access NSW DPHI DA API to clean a .csv of DAs in NSW
+#Purpose: Access NSW DPHI DA API to get and clean a .csv of DAs in NSW
 
 #load and install required packages
 if(!require("pacman",character.only = T)) install.packages("pacman")
@@ -14,55 +14,50 @@ pacman::p_load(
   jsonlite,
   rvest,
   broom,
-  purrr,
-  tmap,
-  sf
+  purrr
 )
 
 #basic setup
 gc()
 rm(list=ls())
 options(scipen = 999)
-tmap_mode('view')
 
 #set up response parameters and get response data----
-#change parameters here if you'd like to update/lookk at a specific set of dvelopment
-#note that here I only pull developments >$200k to filter out alts/adds and small projects
+#change parameters here if you'd like to update/look at a specific set of development
+#note that here I only pull developments >$5m to look at only large-ish projects
 #if you change this, check that your final output has fewer rows than the PageSize variable
 #so you haven't missed any.
 #note also that this doesn't include CDCs- that's a separate API. 
 
 #define headers
 headers<-c(
-  'PageSize'='1000',
+  'PageSize'='10000',
   'PageNumber'='1',
   'filters'='{ "filters": {"CostOfDevelopmentFrom":5000000,
-  "ApplicationType":"Development Application","DevelopmentCategory":"Residential","ApplicationStatus":["On Exhibition","Under Assessment"]} }'
+  "ApplicationType":"Development Application","DevelopmentCategory":"Residential"}}'
 )
 
-#run request
-res<-VERB("GET",url="https://api.apps1.nsw.gov.au/eplanning/data/v0/OnlineDA",add_headers(headers))
-
-#get content from response
-content<-content(res,as='parsed',type='application/json')
+#run request and get content from the response
+api_response<-VERB("GET",
+                   url="https://api.apps1.nsw.gov.au/eplanning/data/v0/OnlineDA",
+                   add_headers(headers))%>%
+ content(as='parsed',
+         type='application/json')
 
 #get details
-details<-content$Application
+details<-api_response$Application
 
 
 #tidy up downloaded data----
-#first, remove 'lot' list from each element (problematic)
-
-for (i in seq_along(details)){
-  details[[i]]$Location<-lapply(details[[i]]$Location, function(loc) {
-    loc$Lot <-NULL
-    return(loc)
-  })
-}
-#unnest nested lists and dataframe from the applications data
-
+#function to unnest nested lists, remove unnecessary columns and generally clean up 
+#the applications data, then convert to a data.frame for saving or further analysis.  
 clean_output<-function(data){
   for(i in seq_along(data)){
+    #remove 'lot' list from each location list- causes problems
+    data[[i]]$Location<-lapply(data[[i]]$Location, function(loc) {
+      loc$Lot <-NULL
+      return(loc)
+    })
     #drop various unnecessary datapoints
     data[[i]]$VPAStatus<-NULL
     #ensure council is formatted properly
@@ -80,31 +75,16 @@ clean_output<-function(data){
       data[[i]]$DevelopmentType<-concatenated_types
     }
   }
-return(data)
+#convert to a data.frame
+  data_df<-map_dfr(data,as_tibble)%>%
+    unnest_wider(Location)%>%
+    #remove subdivision type if present, causes issues with saving as csv. 
+    select(-any_of('SubdivisionType'))
+return(data_df)
 }
 
 #clean data
 clean_data<-clean_output(details)
 
-#convert this to a df
-das_df<-map_dfr(clean_data,as_tibble)%>%
-  unnest_wider(Location)%>%
-  unnest_wider(SubdivisionType)
-
-#filter to those with an exhibition end date after today's date
-today_date<-Sys.time()
-active_das<-das_df%>%
-  mutate(AssessmentExhibitionEndDate=as.POSIXct(AssessmentExhibitionEndDate))%>%
-  filter(AssessmentExhibitionEndDate>today_date)
-
-
-#put on map
-
-active_das%>%
-  st_as_sf(coords=c('X','Y'))%>%
-  tm_shape()+
-  tm_sf(col='NumberOfNewDwellings',size=0.001,id="FullAddress")
-
 #save output
-write.csv(das_df,'./Data/da_example.csv')
-write.csv(active_das,'./Data/active_das.csv')
+write.csv(clean_data,'./Data/DAs_over_5_million.csv')
