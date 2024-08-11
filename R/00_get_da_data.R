@@ -1,5 +1,5 @@
 #Author: Dominic Behrens
-#Purpose: Access NSW DPHI DA API to clean a .csv of all DAs in NSW
+#Purpose: Access NSW DPHI DA API to clean a .csv of DAs in NSW
 
 #load and install required packages
 if(!require("pacman",character.only = T)) install.packages("pacman")
@@ -14,13 +14,16 @@ pacman::p_load(
   jsonlite,
   rvest,
   broom,
-  purrr
+  purrr,
+  tmap,
+  sf
 )
 
 #basic setup
 gc()
 rm(list=ls())
 options(scipen = 999)
+tmap_mode('view')
 
 #set up response parameters and get response data----
 #change parameters here if you'd like to update/lookk at a specific set of dvelopment
@@ -31,10 +34,10 @@ options(scipen = 999)
 
 #define headers
 headers<-c(
-  'PageSize'='100',
+  'PageSize'='1000',
   'PageNumber'='1',
-  'filters'='{ "filters": {"CostOfDevelopmentFrom":200000,
-  "ApplicationType":"Development Application"} }'
+  'filters'='{ "filters": {"CostOfDevelopmentFrom":5000000,
+  "ApplicationType":"Development Application","DevelopmentCategory":"Residential","ApplicationStatus":["On Exhibition","Under Assessment"]} }'
 )
 
 #run request
@@ -88,5 +91,20 @@ das_df<-map_dfr(clean_data,as_tibble)%>%
   unnest_wider(Location)%>%
   unnest_wider(SubdivisionType)
 
+#filter to those with an exhibition end date after today's date
+today_date<-Sys.time()
+active_das<-das_df%>%
+  mutate(AssessmentExhibitionEndDate=as.POSIXct(AssessmentExhibitionEndDate))%>%
+  filter(AssessmentExhibitionEndDate>today_date)
+
+
+#put on map
+
+active_das%>%
+  st_as_sf(coords=c('X','Y'))%>%
+  tm_shape()+
+  tm_sf(col='NumberOfNewDwellings',size=0.001,id="FullAddress")
+
 #save output
 write.csv(das_df,'./Data/da_example.csv')
+write.csv(active_das,'./Data/active_das.csv')
