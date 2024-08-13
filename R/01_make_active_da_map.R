@@ -37,5 +37,5 @@ active_da_map<-active_das%>%
   tm_sf(col='NumberOfNewDwellings',size=0.001,id="FullAddress",popup.vars=c('NumberOfNewDwellings','PlanningPortalApplicationNumber','NumberOfStoreys','Council'))
 
 #save outputs
-write.csv(active_das,'./Data/Active_DAs.csv')
+write.csv(active_das,'./Outputs/Active_DAs.csv')
 tmap_save(active_da_map,'./Outputs/active_da_map.html')
